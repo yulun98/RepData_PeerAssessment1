@@ -8,18 +8,160 @@ output:
 
 ## Loading and preprocessing the data
 
+Load lirary
+```{r library_loading}
+library(ggplot2)
+library(knitr)
+library(dplyr)
+```
 
+```{r}
+## Load Data 
+## Create data directory
+
+if(!dir.exists("data")) { dir.create("data") }
+
+## Download and unzip data file
+
+file.url   <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip"
+file.path  <- "data/activity_monitoring_data.zip"
+file.unzip <- "data/activity_monitoring_data.csv"
+
+if(!file.exists(file.path) & !file.exists(file.unzip)) {
+  download.file(file.url, file.path)
+  unzip(file.path, exdir = "data")
+}
+## Load data
+amd <- read.csv("./data/activity.csv")
+```
+
+Check first few rows of data
+
+```{r}
+head(amd)
+```
 
 ## What is mean total number of steps taken per day?
 
+1. Calculating steps per day
 
+```{r}
+steps_per_day <- amd %>% group_by(date) %>% summarise(total_steps=sum(steps, na.rm=TRUE))
+steps_per_day
+```
+
+2. Making a histogram of total steps taken per day
+
+```{r}
+ggplot(data=steps_per_day, aes(x=total_steps)) + geom_histogram(binwidth = 2000)
+```
+
+3. Calculating and displaying mean steps per day
+
+```{r}
+mean_step_per_day <- steps_per_day %>% summarise(mean_of_step=mean(total_steps))
+mean_step_per_day
+```
 
 ## What is the average daily activity pattern?
 
+```{r}
+interval_data <- amd %>% group_by(interval) %>% summarise(steps_by_interval=sum(steps, na.rm=TRUE))
+interval_data
+```
+1. Making time-series plot
 
+```{r}
+plot(interval_data$interval, interval_data$steps_by_interval, type="l", main="time series plot of the 5-minute interval vs the average number of steps taken, averaged across all days ")
+```
+
+2. Finding which 5-minute interval have the maximum number of steps
+
+```{r}
+max_step <- interval_data %>% arrange(desc(steps_by_interval))
+head(max_step, n=1)
+```
 
 ## Imputing missing values
 
+1. Calculate and report the total number of missing values in the dataset 
 
+```{r}
+amd %>% count(is.na(steps)) 
+```
+There are 2304 missing values
+
+2. Devise a strategy for filling in all of the missing values in the dataset. The strategy does not need to be sophisticated.
+
+Finding the mean to replace NA
+```{r}
+# Calculating mean to replace NA
+amd_new <- amd
+amd_new$steps[is.na(amd_new$steps)] <- mean(amd_new$steps, na.rm=TRUE)
+head(amd_new)
+```
+
+```{r}
+#Replacing na based on interval
+amd_na_replacing <- amd
+head(amd_na_replacing)
+amd_na_replacing <- amd_na_replacing %>% group_by(interval) %>% summarise(mean_by_interval = mean(steps, na.rm=TRUE))
+amd_na_replacing
+amd_merge <- merge(amd,amd_na_replacing, by = c("interval"))
+amd_merge$steps <- ifelse(is.na(amd_merge$steps), amd_merge$mean_by_interval, amd_merge$steps)   
+amd_merge <- amd_merge %>% group_by(date) %>% select(steps, date, interval)
+amd_merge
+```
+
+3. Create a new dataset that is equal to the original dataset but with the missing data filled in.
+
+```{r}
+amd_merge
+```
+
+4. Make a histogram of the total number of steps taken each day and Calculate and report the mean and median total number of steps taken per day. Do these values differ from the estimates from the first part of the assignment? What is the impact of imputing missing data on the estimates of the total daily number of steps?
+
+Histogram
+```{r}
+amd_merge_by_day <- amd_merge %>%  group_by(date) %>% summarise(sum_steps=sum(steps))
+ggplot(data=amd_merge_by_day, aes(x=sum_steps)) + geom_histogram(binwidth = 2000)
+```
+
+Mean total number of steps taken per day
+
+```{r}
+mean(amd_merge_by_day$sum_steps)
+```
+Median total number of steps taken per day
+
+```{r}
+median(amd_merge_by_day$sum_steps)
+```
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+```{r}
+#Create a function to convert date to weekend and weekday
+wkday <- function(dat_val) {
+  wd <- weekdays(as.Date(dat_val, '%Y-%m-%d'))
+  if  (!(wd == 'Saturday' || wd == 'Sunday')) {
+    x <- 'Weekday'
+  } 
+  else {
+    x <- 'Weekend'
+  }
+  x
+}
+amd_clean <- amd
+#Weekday vs Weekend
+amd_clean$day <- as.factor(sapply(amd_clean$date, wkday))
+#Aggregate mean of steps on Interval and Day
+report_activity <- aggregate(steps~interval+day, amd_clean, mean)
+report_activity
+#Plot
+base<- ggplot(report_activity, aes(interval,steps))
+base <- base + geom_line(stat = 'identity', aes(color='day')) + facet_grid(day~.)
+base + labs(x= '5 mins Interval', y = "Average of Steps") + ggtitle("Dataset for weekday and weekend")
+
+```
+
